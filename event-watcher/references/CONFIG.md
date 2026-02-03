@@ -47,6 +47,10 @@ watchers:
     stream: weather_events
     group: eventwatcher
     consumer: watcher-1
+    batch_count: 10
+    block_ms: 1000
+    payloadField: payload
+    payloadEncoding: json
     filter:
       field: "payload.weather"
       op: "!="
@@ -68,6 +72,10 @@ watchers:
 - `source`: currently only `redis_stream`
 - `stream`: Redis stream name
 - `group`, `consumer`: Redis consumer group settings
+- `batch_count`: number of events per read (default 10)
+- `block_ms`: Redis block time (default 1000)
+- `payloadField`: field to parse as payload (optional)
+- `payloadEncoding`: `json|hash|string` (default `hash`)
 - `filter`: JSON rule (see below)
 - `dedupe_ttl_seconds`: default 1800
 - `ack_timeout_seconds`: default 30
@@ -90,7 +98,7 @@ Natural language can be translated by the agent into JSON.
 ---
 
 ## Deduplication
-- store `event_id` in in-memory LRU or Redis key
+- store `event_id` in Redis key
 - default TTL: 1800s (configurable)
 
 ---
