@@ -5,6 +5,7 @@
 - [ ] Implement batch reads (count > 1) and backlog draining
 - [ ] Add explicit payload parsing config (`payloadField`, `payloadEncoding`)
 - [ ] Add multi-source adapter framework (redis_stream, sqs, kafka, webhook)
+- [ ] Implement webhook source via OpenClaw hooks/webhooks
 
 ## P1
 - [ ] Support AND/OR filter groups + regex operations

@@ -13,6 +13,7 @@ This roadmap is a prioritized list of improvements for the Event Watcher skill.
    - Validate required fields; dead-letter on missing
 4. **Configurable Event Sources (multi-source)**
    - Add `source` adapters (redis_stream, sqs, kafka, webhook)
+   - Prefer OpenClaw hooks/webhooks for `webhook` source
    - Enforce per-source config blocks
 
 ## P1 — Filtering & Observability
