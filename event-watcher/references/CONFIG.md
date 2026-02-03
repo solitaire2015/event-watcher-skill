@@ -72,8 +72,8 @@ watchers:
 - `dedupe_ttl_seconds`: default 1800
 - `ack_timeout_seconds`: default 30
 - `retry`: max + backoff list
-- `wake.method`: `sessions_send`
-- `wake.session_key`: target session
+- `wake.method`: `sessions_send` (implemented via `openclaw agent --session-id`)
+- `wake.session_key`: target session id (from `openclaw sessions --json`)
 - `wake.message_template`: text for the agent
 
 ---
@@ -115,8 +115,8 @@ Natural language can be translated by the agent into JSON.
 ---
 
 ## pm2 Management (MVP)
-- Start: `pm2 start scripts/watcher.py --name event-watcher`
-- Stop: `pm2 stop event-watcher`
+- Start: `./scripts/pm2_start.sh`
+- Stop: `./scripts/pm2_stop.sh`
 - Logs: `pm2 logs event-watcher`
 
 ---

@@ -26,10 +26,12 @@ Design and operate a lightweight event watcher daemon (pm2-managed) that listens
    - Record ack or retry
    - Write dead_letter.jsonl on terminal failure
 
-## Scripts (planned)
+## Scripts
 - `scripts/watcher.py` — Redis Stream poller + filter + wake
 - `scripts/manage.py` — add/update/remove/list watcher configs
 - `scripts/pm2_start.sh` — start daemon under pm2
+- `scripts/pm2_stop.sh` — stop daemon
+- `scripts/requirements.txt` — Python deps (redis, pyyaml)
 
 ## References
 - See `references/CONFIG.md` for full configuration spec, examples, and routing rules.
