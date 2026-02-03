@@ -27,7 +27,8 @@ Design and operate a lightweight event watcher daemon (pm2-managed) that listens
    - Write dead_letter.jsonl on terminal failure
 
 ## Scripts
-- `scripts/watcher.py` — Redis Stream poller + filter + wake
+- `scripts/watcher.py` — multi-source watcher (redis_stream, webhook)
+- `scripts/webhook_bridge.py` — append webhook payloads to JSONL
 - `scripts/manage.py` — add/update/remove/list watcher configs
 - `scripts/pm2_start.sh` — start daemon under pm2
 - `scripts/pm2_stop.sh` — stop daemon
