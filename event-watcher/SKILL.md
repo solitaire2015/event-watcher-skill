@@ -11,11 +11,12 @@ Design and operate a lightweight event watcher daemon (pm2-managed) that listens
 ## Core Capabilities
 1. **Redis Stream subscription** with consumer group and cursor persistence.
 2. **Event normalization** to a unified schema.
-3. **Filtering** via JSON rules (natural language → JSON conversion handled by agent).
+3. **Filtering** via JSON rules (supports AND/OR + regex).
 4. **Deduplication** with TTL (configurable).
 5. **Retry + dead-letter** on failed delivery.
 6. **Session routing** via `sessions_send` (configurable per watcher).
-7. **Daemon management** using pm2 (start/stop/logs).
+7. **Structured logging + counters** for received/matched/delivered/failed.
+8. **Daemon management** using pm2 (start/stop/logs).
 
 ## Workflow (MVP)
 1. Read watcher config (YAML) from `references/CONFIG.md`.

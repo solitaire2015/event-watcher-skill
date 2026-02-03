@@ -13,11 +13,13 @@ import redis
 
 from sources.redis_stream import ensure_group, read_group, ack
 from sources.webhook_file import read_events as read_webhook_events
-from utils import normalize_event, match_filter, render_template, utc_now
+from utils import normalize_event, render_template, utc_now
+from filter_rules import match_filter
 
 DEFAULT_CONFIG = os.environ.get("EVENT_WATCHER_CONFIG", "event_watcher.yaml")
 DEFAULT_STATE = os.environ.get("EVENT_WATCHER_STATE", "event_watcher_state.json")
 DEAD_LETTER = os.environ.get("EVENT_WATCHER_DEAD_LETTER", "dead_letter.jsonl")
+EVENT_LOG = os.environ.get("EVENT_WATCHER_LOG", "event_watcher_events.jsonl")
 OPENCLAW_SESSION_KEY = os.environ.get("OPENCLAW_SESSION_KEY")
 
 
@@ -57,6 +59,34 @@ def append_dead_letter(event: dict, reason: str) -> None:
         "payload": event,
     }
     with open(DEAD_LETTER, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def init_metrics(state: dict, name: str) -> dict:
+    metrics = state.setdefault("metrics", {})
+    metrics.setdefault(name, {
+        "received": 0,
+        "matched": 0,
+        "delivered": 0,
+        "failed": 0,
+        "filtered": 0,
+        "deduped": 0,
+    })
+    return metrics[name]
+
+
+def log_event(watcher: str, stage: str, event: dict, extra: dict | None = None) -> None:
+    entry = {
+        "ts": utc_now(),
+        "watcher": watcher,
+        "stage": stage,
+        "event_id": event.get("event_id"),
+        "source": event.get("source"),
+        "topic": event.get("topic"),
+    }
+    if extra:
+        entry.update(extra)
+    with open(EVENT_LOG, "a") as f:
         f.write(json.dumps(entry) + "\n")
 
 
@@ -102,6 +132,9 @@ def main() -> None:
                 if not stream:
                     continue
 
+                name = w.get("name")
+                metrics = init_metrics(state, name)
+
                 group = w.get("group", "eventwatcher")
                 consumer = w.get("consumer", "watcher-1")
                 batch = int(w.get("batch_count", 10))
@@ -119,19 +152,35 @@ def main() -> None:
                         payload_field = w.get("payloadField")
                         payload_encoding = w.get("payloadEncoding", "hash")
                         event = normalize_event(stream, event_id, fields, payload_field, payload_encoding)
+                        log_event(name, "received", event)
+                        metrics["received"] += 1
+                        save_state(args.state, state)
 
                         if event.get("payload") is None:
+                            log_event(name, "failed", event, {"reason": "payload_parse_failed"})
+                            metrics["failed"] += 1
+                            save_state(args.state, state)
                             append_dead_letter(event, "payload_parse_failed")
                             ack(r, stream, group, event_id)
                             continue
 
                         if not match_filter(event, w.get("filter")):
+                            log_event(name, "filtered", event)
+                            metrics["filtered"] += 1
+                            save_state(args.state, state)
                             ack(r, stream, group, event_id)
                             continue
+
+                        log_event(name, "matched", event)
+                        metrics["matched"] += 1
+                        save_state(args.state, state)
 
                         ttl = int(w.get("dedupe_ttl_seconds", 1800))
                         dedupe_key = f"eventwatcher:dedupe:{stream}:{event_id}"
                         if not r.set(dedupe_key, "1", nx=True, ex=ttl):
+                            log_event(name, "deduped", event)
+                            metrics["deduped"] += 1
+                            save_state(args.state, state)
                             ack(r, stream, group, event_id)
                             continue
 
@@ -147,6 +196,9 @@ def main() -> None:
                         ok = send_to_openclaw(session_key, message, timeout)
 
                         if ok:
+                            log_event(name, "delivered", event)
+                            metrics["delivered"] += 1
+                            save_state(args.state, state)
                             ack(r, stream, group, event_id)
                             state["attempts"].pop(event_id, None)
                             save_state(args.state, state)
@@ -157,6 +209,9 @@ def main() -> None:
                             max_retry = int(retry.get("max", 3))
                             backoff = retry.get("backoff_seconds", [60, 300, 900])
                             if attempts >= max_retry:
+                                log_event(name, "failed", event, {"reason": "send_failed"})
+                                metrics["failed"] += 1
+                                save_state(args.state, state)
                                 append_dead_letter(event, "send_failed")
                                 ack(r, stream, group, event_id)
                                 state["attempts"].pop(event_id, None)
@@ -166,6 +221,8 @@ def main() -> None:
                                 time.sleep(wait)
 
             elif source == "webhook":
+                name = w.get("name")
+                metrics = init_metrics(state, name)
                 events = handle_webhook_source(w, state, args)
                 if not events:
                     continue
@@ -179,30 +236,54 @@ def main() -> None:
                     if "payload" not in event:
                         event["payload"] = event
 
+                    log_event(name, "received", event)
+                    metrics["received"] += 1
+                    save_state(args.state, state)
+
                     if not match_filter(event, w.get("filter")):
+                        log_event(name, "filtered", event)
+                        metrics["filtered"] += 1
+                        save_state(args.state, state)
                         continue
+
+                    log_event(name, "matched", event)
+                    metrics["matched"] += 1
+                    save_state(args.state, state)
 
                     ttl = int(w.get("dedupe_ttl_seconds", 1800))
                     dedupe_key = f"eventwatcher:dedupe:webhook:{event_id}"
                     if not r.set(dedupe_key, "1", nx=True, ex=ttl):
+                        log_event(name, "deduped", event)
+                        metrics["deduped"] += 1
+                        save_state(args.state, state)
                         continue
 
                     wake = w.get("wake", {})
                     session_key = wake.get("session_key") or OPENCLAW_SESSION_KEY
                     if not session_key:
+                        log_event(name, "failed", event, {"reason": "missing_session_key"})
+                        metrics["failed"] += 1
+                        save_state(args.state, state)
                         append_dead_letter(event, "missing_session_key")
                         continue
 
                     message = render_template(wake.get("message_template", ""), event)
                     timeout = int(w.get("ack_timeout_seconds", 30))
                     ok = send_to_openclaw(session_key, message, timeout)
-                    if not ok:
+                    if ok:
+                        log_event(name, "delivered", event)
+                        metrics["delivered"] += 1
+                        save_state(args.state, state)
+                    else:
                         attempts = state["attempts"].get(event_id, 0) + 1
                         state["attempts"][event_id] = attempts
                         retry = w.get("retry", {})
                         max_retry = int(retry.get("max", 3))
                         backoff = retry.get("backoff_seconds", [60, 300, 900])
                         if attempts >= max_retry:
+                            log_event(name, "failed", event, {"reason": "send_failed"})
+                            metrics["failed"] += 1
+                            save_state(args.state, state)
                             append_dead_letter(event, "send_failed")
                             state["attempts"].pop(event_id, None)
                             save_state(args.state, state)
