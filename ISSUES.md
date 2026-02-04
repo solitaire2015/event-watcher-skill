@@ -4,7 +4,7 @@
 - [ ] Use Redis consumer groups (XGROUP/XREADGROUP) for at-least-once delivery
 - [ ] Implement batch reads (count > 1) and backlog draining
 - [ ] Add explicit payload parsing config (`payloadField`, `payloadEncoding`)
-- [ ] Add multi-source adapter framework (redis_stream, sqs, kafka, webhook)
+- [ ] Add multi-source adapter framework (redis_stream + webhook)
 - [ ] Implement webhook source via OpenClaw hooks/webhooks
 
 ## P1
@@ -12,6 +12,9 @@
 - [ ] Add structured logs + counters (received/matched/delivered/failed)
 
 ## P2
+- [ ] Add Kafka adapter
+- [ ] Add SQS adapter
+- [ ] Support alternative daemons (systemd/launchd/supervisord)
 - [ ] Rate-limit / aggregate burst notifications
 - [ ] Add healthcheck + graceful shutdown
 - [ ] Dead-letter replay CLI

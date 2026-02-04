@@ -107,11 +107,23 @@ Use `scripts/webhook_bridge.py` as the hook target to append incoming payloads t
 ---
 
 ## Filter Rules
-JSON rule format:
+Simple rule:
 ```json
 {"field":"payload.weather","op":"!=","value":"sunny"}
 ```
-Supported `op`: `==`, `!=`, `>`, `<`, `in`, `contains`
+
+Group rules:
+```json
+{"all":[
+  {"field":"payload.type","op":"!=","value":"sunny"},
+  {"any":[
+    {"field":"payload.city","op":"==","value":"beijing"},
+    {"field":"payload.city","op":"==","value":"shanghai"}
+  ]}
+]}
+```
+
+Supported `op`: `==`, `!=`, `>`, `<`, `>=`, `<=`, `in`, `contains`, `regex`
 
 Natural language can be translated by the agent into JSON.
 
@@ -141,6 +153,10 @@ Natural language can be translated by the agent into JSON.
 - The agent decides whether to notify the user
 
 ---
+
+## Logging + Metrics
+- Structured event logs: `EVENT_WATCHER_LOG` (default `event_watcher_events.jsonl`)
+- State file includes counters per watcher: received/matched/delivered/failed/filtered/deduped
 
 ## pm2 Management (MVP)
 - Start: `./scripts/pm2_start.sh`
