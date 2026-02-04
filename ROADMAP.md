@@ -3,25 +3,10 @@
 This roadmap is a prioritized list of improvements for the Event Watcher skill.
 
 ## P0 — Reliability & Correctness (must-have)
-1. **Redis Consumer Groups**
-   - Replace XREAD + local cursor with XGROUP / XREADGROUP
-   - Proper acking + restart safety
-2. **Batch Reads**
-   - Support multiple events per read to handle spikes
-3. **Explicit Payload Schema**
-   - Config: `payloadField`, `payloadEncoding: json|hash|string`
-   - Validate required fields; dead-letter on missing
-4. **Configurable Event Sources (multi-source)**
-   - Add `source` adapters (redis_stream + webhook)
-   - Prefer OpenClaw hooks/webhooks for `webhook` source
-   - Enforce per-source config blocks
+✅ Completed (2026-02-03)
 
 ## P1 — Filtering & Observability
-5. **Advanced Filter Rules**
-   - AND/OR groups, regex, numeric comparisons
-6. **Structured Logs & Metrics**
-   - received/matched/delivered/failed counters
-   - simple backlog length
+✅ Completed (2026-02-03)
 
 ## P2 — Delivery & Ops
 7. **Rate Limiting / Grouping**
@@ -37,3 +22,9 @@ This roadmap is a prioritized list of improvements for the Event Watcher skill.
     - Optional agent tool to convert NL into JSON rules
 11. **pm2 ecosystem.config.js**
     - Standardized launch config
+
+## Done
+- P0: Redis consumer groups + batch reads + payload parsing
+- P0: Multi-source framework (redis_stream + webhook) + webhook source
+- P1: Advanced filter rules (AND/OR/regex)
+- P1: Structured logs + counters
