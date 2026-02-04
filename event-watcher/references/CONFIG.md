@@ -136,13 +136,25 @@ Natural language can be translated by the agent into JSON.
 ---
 
 ## Retry + Dead Letter
-- if `sessions_send` fails or ack timeout:
+- if delivery fails:
   - retry with backoff
   - after max attempts, append to `dead_letter.jsonl`
 
 `dead_letter.jsonl` entry:
 ```json
-{"event_id":"...","reason":"ack_timeout","last_attempt":"...","payload":{...}}
+{"event_id":"...","reason":"send_failed","last_attempt":"...","payload":{...}}
+```
+
+Replay CLI:
+```bash
+# list entries
+./scripts/deadletter.py list --path dead_letter.jsonl
+
+# replay all send_failed entries
+./scripts/deadletter.py replay --reason send_failed
+
+# dry run + limit
+./scripts/deadletter.py replay --dry-run --limit 10
 ```
 
 ---
