@@ -100,6 +100,9 @@ Use `scripts/webhook_bridge.py` as the hook target to append incoming payloads t
 - `dedupe_ttl_seconds`: default 1800
 - `ack_timeout_seconds`: default 30
 - `retry`: max + backoff list
+- `rate_limit.min_interval_seconds`: minimum seconds between deliveries
+- `aggregate.window_seconds`: aggregate events for a window and send one message
+- `aggregate.message_template`: template for aggregated message (supports `{{count}}`, `{{first_event_id}}`, `{{last_event_id}}`, `{{last_payload}}`)
 - `wake.method`: `sessions_send` (implemented via `openclaw agent --session-id`)
 - `wake.session_key`: target session id (from `openclaw sessions --json`)
 - `wake.message_template`: text for the agent
@@ -159,6 +162,17 @@ Replay CLI:
 
 ---
 
+## Rate Limiting + Aggregation
+```yaml
+rate_limit:
+  min_interval_seconds: 60
+aggregate:
+  window_seconds: 300
+  message_template: "Burst: {{count}} events (last={{last_event_id}})"
+```
+
+---
+
 ## Session Routing
 - Each watcher can target a session via `wake.session_key`
 - If omitted, use env `OPENCLAW_SESSION_KEY`
@@ -168,7 +182,12 @@ Replay CLI:
 
 ## Logging + Metrics
 - Structured event logs: `EVENT_WATCHER_LOG` (default `event_watcher_events.jsonl`)
-- State file includes counters per watcher: received/matched/delivered/failed/filtered/deduped
+- State file includes counters per watcher: received/matched/delivered/failed/filtered/deduped/rate_limited
+
+## Healthcheck + Shutdown
+- Healthcheck: `./scripts/healthcheck.py --config event_watcher.yaml`
+- Use `--strict` to fail if webhook log path is missing
+- Graceful shutdown: watcher handles SIGTERM/SIGINT and flushes state
 
 ## pm2 Management (MVP)
 - Start: `./scripts/pm2_start.sh`

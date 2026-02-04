@@ -31,6 +31,7 @@ Design and operate a lightweight event watcher daemon (pm2-managed) that listens
 - `scripts/watcher.py` — multi-source watcher (redis_stream, webhook)
 - `scripts/webhook_bridge.py` — append webhook payloads to JSONL
 - `scripts/deadletter.py` — list/replay dead-letter events
+- `scripts/healthcheck.py` — healthcheck (redis/stream + webhook log)
 - `scripts/manage.py` — add/update/remove/list watcher configs
 - `scripts/pm2_start.sh` — start daemon under pm2
 - `scripts/pm2_stop.sh` — stop daemon
