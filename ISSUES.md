@@ -14,7 +14,7 @@
 ## P2
 - [ ] Add Kafka adapter
 - [ ] Add SQS adapter
-- [ ] Support alternative daemons (systemd/launchd/supervisord)
+- [x] Support alternative daemons (systemd/launchd/supervisord)
 - [x] Rate-limit / aggregate burst notifications
 - [x] Add healthcheck + graceful shutdown
 - [x] Dead-letter replay CLI
