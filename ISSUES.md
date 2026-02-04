@@ -15,9 +15,9 @@
 - [ ] Add Kafka adapter
 - [ ] Add SQS adapter
 - [ ] Support alternative daemons (systemd/launchd/supervisord)
-- [ ] Rate-limit / aggregate burst notifications
-- [ ] Add healthcheck + graceful shutdown
-- [ ] Dead-letter replay CLI
+- [x] Rate-limit / aggregate burst notifications
+- [x] Add healthcheck + graceful shutdown
+- [x] Dead-letter replay CLI
 
 ## P3
 - [ ] Natural language → filter rules helper
