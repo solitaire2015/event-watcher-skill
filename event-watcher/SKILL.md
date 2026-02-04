@@ -37,5 +37,10 @@ Design and operate a lightweight event watcher daemon (pm2-managed) that listens
 - `scripts/pm2_stop.sh` — stop daemon
 - `scripts/requirements.txt` — Python deps (redis, pyyaml)
 
+## Daemon Templates
+- `daemon/systemd/event-watcher.service`
+- `daemon/launchd/com.openclaw.event-watcher.plist`
+- `daemon/env.example`
+
 ## References
 - See `references/CONFIG.md` for full configuration spec, examples, and routing rules.
