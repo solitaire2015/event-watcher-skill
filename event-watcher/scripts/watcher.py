@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import time
 from typing import Any, Dict
@@ -21,6 +22,7 @@ DEFAULT_STATE = os.environ.get("EVENT_WATCHER_STATE", "event_watcher_state.json"
 DEAD_LETTER = os.environ.get("EVENT_WATCHER_DEAD_LETTER", "dead_letter.jsonl")
 EVENT_LOG = os.environ.get("EVENT_WATCHER_LOG", "event_watcher_events.jsonl")
 OPENCLAW_SESSION_KEY = os.environ.get("OPENCLAW_SESSION_KEY")
+SHUTDOWN = False
 
 
 def load_config(path: str) -> dict:
@@ -71,6 +73,7 @@ def init_metrics(state: dict, name: str) -> dict:
         "failed": 0,
         "filtered": 0,
         "deduped": 0,
+        "rate_limited": 0,
     })
     return metrics[name]
 
@@ -90,6 +93,93 @@ def log_event(watcher: str, stage: str, event: dict, extra: dict | None = None) 
         f.write(json.dumps(entry) + "\n")
 
 
+def render_aggregate_template(template: str, events: list[dict]) -> str:
+    if not template:
+        return f"Aggregated {len(events)} events. Last: {events[-1].get('event_id')}"
+    out = template
+    out = out.replace("{{count}}", str(len(events)))
+    out = out.replace("{{first_event_id}}", str(events[0].get("event_id")))
+    out = out.replace("{{last_event_id}}", str(events[-1].get("event_id")))
+    out = out.replace("{{last_payload}}", str(events[-1].get("payload")))
+    return out
+
+
+def flush_aggregate(w, state, metrics, state_path: str):
+    agg = w.get("aggregate", {})
+    window = int(agg.get("window_seconds", 0))
+    if window <= 0:
+        return
+    name = w.get("name")
+    store = state.setdefault("aggregates", {})
+    entry = store.get(name)
+    if not entry:
+        return
+    now = time.time()
+    if now - entry.get("window_start", now) < window:
+        return
+
+    events = entry.get("events", [])
+    if not events:
+        return
+
+    wake = w.get("wake", {})
+    session_key = wake.get("session_key") or OPENCLAW_SESSION_KEY
+    if not session_key:
+        return
+
+    message = render_aggregate_template(agg.get("message_template", ""), events)
+    timeout = int(w.get("ack_timeout_seconds", 30))
+    ok = send_to_openclaw(session_key, message, timeout)
+    if ok:
+        metrics["delivered"] += 1
+        log_event(name, "delivered", events[-1], {"aggregate_count": len(events)})
+    else:
+        metrics["failed"] += 1
+        log_event(name, "failed", events[-1], {"reason": "aggregate_send_failed", "aggregate_count": len(events)})
+
+    store[name] = {"window_start": now, "events": []}
+    save_state(state_path, state)
+
+
+def add_aggregate(w, state, event, state_path: str) -> None:
+    agg = w.get("aggregate", {})
+    window = int(agg.get("window_seconds", 0))
+    if window <= 0:
+        return
+    name = w.get("name")
+    store = state.setdefault("aggregates", {})
+    now = time.time()
+    entry = store.get(name)
+    if not entry or now - entry.get("window_start", now) >= window:
+        entry = {"window_start": now, "events": []}
+
+    entry["events"].append(event)
+    store[name] = entry
+    save_state(state_path, state)
+
+
+def is_rate_limited(w, state) -> bool:
+    rate = w.get("rate_limit", {})
+    min_interval = int(rate.get("min_interval_seconds", 0))
+    if min_interval <= 0:
+        return False
+    name = w.get("name")
+    store = state.setdefault("rate_limit", {})
+    last = float(store.get(name, 0))
+    return (time.time() - last) < min_interval
+
+
+def mark_rate_limit_sent(w, state, state_path: str) -> None:
+    rate = w.get("rate_limit", {})
+    min_interval = int(rate.get("min_interval_seconds", 0))
+    if min_interval <= 0:
+        return
+    name = w.get("name")
+    store = state.setdefault("rate_limit", {})
+    store[name] = time.time()
+    save_state(state_path, state)
+
+
 def handle_webhook_source(w, state, args):
     name = w.get("name")
     path = w.get("webhook_log_path", os.environ.get("EVENT_WATCHER_WEBHOOK_LOG", "webhook_events.jsonl"))
@@ -102,6 +192,11 @@ def handle_webhook_source(w, state, args):
     return events
 
 
+def handle_signal(_sig, _frame):
+    global SHUTDOWN
+    SHUTDOWN = True
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=DEFAULT_CONFIG)
@@ -109,6 +204,9 @@ def main() -> None:
     ap.add_argument("--poll-interval", type=float, default=1.0)
     ap.add_argument("--once", action="store_true")
     args = ap.parse_args()
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
 
     cfg = load_config(args.config)
     watchers = cfg.get("watchers", [])
@@ -126,6 +224,8 @@ def main() -> None:
     while True:
         any_work = False
         for w in watchers:
+            if SHUTDOWN:
+                break
             source = w.get("source")
             if source == "redis_stream":
                 stream = w.get("stream")
@@ -134,6 +234,7 @@ def main() -> None:
 
                 name = w.get("name")
                 metrics = init_metrics(state, name)
+                flush_aggregate(w, state, metrics, args.state)
 
                 group = w.get("group", "eventwatcher")
                 consumer = w.get("consumer", "watcher-1")
@@ -184,6 +285,12 @@ def main() -> None:
                             ack(r, stream, group, event_id)
                             continue
 
+                        if int(w.get("aggregate", {}).get("window_seconds", 0)) > 0:
+                            add_aggregate(w, state, event, args.state)
+                            log_event(name, "aggregated", event)
+                            ack(r, stream, group, event_id)
+                            continue
+
                         wake = w.get("wake", {})
                         session_key = wake.get("session_key") or OPENCLAW_SESSION_KEY
                         if not session_key:
@@ -193,6 +300,15 @@ def main() -> None:
 
                         message = render_template(wake.get("message_template", ""), event)
                         timeout = int(w.get("ack_timeout_seconds", 30))
+
+                        if is_rate_limited(w, state):
+                            log_event(name, "rate_limited", event)
+                            metrics["rate_limited"] += 1
+                            save_state(args.state, state)
+                            ack(r, stream, group, event_id)
+                            continue
+
+                        mark_rate_limit_sent(w, state, args.state)
                         ok = send_to_openclaw(session_key, message, timeout)
 
                         if ok:
@@ -223,6 +339,7 @@ def main() -> None:
             elif source == "webhook":
                 name = w.get("name")
                 metrics = init_metrics(state, name)
+                flush_aggregate(w, state, metrics, args.state)
                 events = handle_webhook_source(w, state, args)
                 if not events:
                     continue
@@ -258,6 +375,11 @@ def main() -> None:
                         save_state(args.state, state)
                         continue
 
+                    if int(w.get("aggregate", {}).get("window_seconds", 0)) > 0:
+                        add_aggregate(w, state, event, args.state)
+                        log_event(name, "aggregated", event)
+                        continue
+
                     wake = w.get("wake", {})
                     session_key = wake.get("session_key") or OPENCLAW_SESSION_KEY
                     if not session_key:
@@ -269,6 +391,14 @@ def main() -> None:
 
                     message = render_template(wake.get("message_template", ""), event)
                     timeout = int(w.get("ack_timeout_seconds", 30))
+
+                    if is_rate_limited(w, state):
+                        log_event(name, "rate_limited", event)
+                        metrics["rate_limited"] += 1
+                        save_state(args.state, state)
+                        continue
+
+                    mark_rate_limit_sent(w, state, args.state)
                     ok = send_to_openclaw(session_key, message, timeout)
                     if ok:
                         log_event(name, "delivered", event)
@@ -293,10 +423,12 @@ def main() -> None:
             else:
                 continue
 
-        if args.once:
+        if args.once or SHUTDOWN:
             break
         if not any_work:
             time.sleep(args.poll_interval)
+
+    save_state(args.state, state)
 
 
 if __name__ == "__main__":
