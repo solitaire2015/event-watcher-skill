@@ -67,15 +67,35 @@ watchers:
         New event: {{event_id}}
 ```
 
+### Webhook Source (via OpenClaw hooks)
+```yaml
+watchers:
+  - name: webhook_events
+    source: webhook
+    webhook_log_path: /root/.openclaw/workspace/webhook_events.jsonl
+    batch_count: 50
+    filter:
+      field: "payload.type"
+      op: "!="
+      value: "sunny"
+    wake:
+      method: sessions_send
+      session_key: "<openclaw_session_key>"
+      message_template: "Webhook event {{event_id}}"
+```
+
+Use `scripts/webhook_bridge.py` as the hook target to append incoming payloads to the JSONL file.
+
 ### Fields
 - `name`: unique watcher id
-- `source`: currently only `redis_stream`
-- `stream`: Redis stream name
-- `group`, `consumer`: Redis consumer group settings
+- `source`: `redis_stream | webhook | sqs | kafka`
+- `stream`: Redis stream name (redis_stream)
+- `group`, `consumer`: Redis consumer group settings (redis_stream)
 - `batch_count`: number of events per read (default 10)
-- `block_ms`: Redis block time (default 1000)
-- `payloadField`: field to parse as payload (optional)
-- `payloadEncoding`: `json|hash|string` (default `hash`)
+- `block_ms`: Redis block time (default 1000) (redis_stream)
+- `payloadField`: field to parse as payload (redis_stream)
+- `payloadEncoding`: `json|hash|string` (redis_stream)
+- `webhook_log_path`: JSONL file path (webhook)
 - `filter`: JSON rule (see below)
 - `dedupe_ttl_seconds`: default 1800
 - `ack_timeout_seconds`: default 30
