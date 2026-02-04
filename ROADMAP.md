@@ -9,13 +9,7 @@ This roadmap is a prioritized list of improvements for the Event Watcher skill.
 ✅ Completed (2026-02-03)
 
 ## P2 — Delivery & Ops
-7. **Rate Limiting / Grouping**
-   - Aggregate bursts into one notification
-8. **Healthcheck + Graceful Shutdown**
-   - Redis connectivity + stream existence checks
-   - SIGTERM flush state
-9. **Dead-letter Replay Tooling**
-   - Inspect and replay failed events
+✅ Rate limiting / grouping, healthcheck, dead-letter replay completed (2026-02-04)
 
 ## P3 — Convenience
 10. **Natural-language → Filter Rules Helper**
@@ -28,3 +22,4 @@ This roadmap is a prioritized list of improvements for the Event Watcher skill.
 - P0: Multi-source framework (redis_stream + webhook) + webhook source
 - P1: Advanced filter rules (AND/OR/regex)
 - P1: Structured logs + counters
+- P2: Rate limit + aggregation, healthcheck + graceful shutdown, dead-letter replay
