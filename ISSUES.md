@@ -22,3 +22,4 @@
 ## P3
 - [ ] Natural language → filter rules helper
 - [ ] pm2 ecosystem.config.js generator
+- [x] Support prompt template files (reference by filename)

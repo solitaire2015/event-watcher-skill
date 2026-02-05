@@ -23,3 +23,4 @@ This roadmap is a prioritized list of improvements for the Event Watcher skill.
 - P1: Advanced filter rules (AND/OR/regex)
 - P1: Structured logs + counters
 - P2: Rate limit + aggregation, healthcheck + graceful shutdown, dead-letter replay, daemon templates
+- P3: Prompt template file reference support
