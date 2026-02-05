@@ -63,8 +63,11 @@ watchers:
     wake:
       method: sessions_send
       session_key: "<openclaw_session_key>"
+      # Option A: inline template
       message_template: |
         New event: {{event_id}}
+      # Option B: prompt file reference (short message)
+      # prompt_file: prompts/weather_guide.md
 ```
 
 ### Webhook Source (via OpenClaw hooks)
@@ -106,6 +109,7 @@ Use `scripts/webhook_bridge.py` as the hook target to append incoming payloads t
 - `wake.method`: `sessions_send | agent_gate`
 - `wake.session_key`: target session id (from `openclaw sessions --json`)
 - `wake.message_template`: text for the agent
+- `wake.prompt_file`: optional prompt guide file path; agent will be told to read it
 - `wake.reply_channel`: required for `agent_gate` (e.g., slack)
 - `wake.reply_to`: required for `agent_gate` (channel/user target id)
 

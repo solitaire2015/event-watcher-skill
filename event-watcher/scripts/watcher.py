@@ -273,6 +273,20 @@ def mark_rate_limit_sent(w, state, state_path: str) -> None:
     save_state(state_path, state)
 
 
+def resolve_message_template(wake: dict) -> str:
+    template = wake.get("message_template", "")
+    prompt_file = wake.get("prompt_file")
+
+    if template and (template.startswith("@file:") or template.startswith("@prompt:")):
+        prompt_file = template.split(":", 1)[1].strip()
+        template = ""
+
+    if prompt_file:
+        return f"Please read {prompt_file} for handling instructions. Event: {{event_id}}"
+
+    return template
+
+
 def handle_webhook_source(w, state, args):
     name = w.get("name")
     path = w.get("webhook_log_path", os.environ.get("EVENT_WATCHER_WEBHOOK_LOG", "webhook_events.jsonl"))
@@ -392,7 +406,7 @@ def main() -> None:
                             ack(r, stream, group, event_id)
                             continue
 
-                        message = render_template(wake.get("message_template", ""), event)
+                        message = render_template(resolve_message_template(wake), event)
                         timeout = int(w.get("ack_timeout_seconds", 30))
 
                         if method == "agent_gate":
@@ -497,7 +511,7 @@ def main() -> None:
                         append_dead_letter(event, "missing_session_key")
                         continue
 
-                    message = render_template(wake.get("message_template", ""), event)
+                    message = render_template(resolve_message_template(wake), event)
                     timeout = int(w.get("ack_timeout_seconds", 30))
                     method = wake.get("method", "sessions_send")
 
