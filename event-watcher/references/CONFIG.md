@@ -112,6 +112,7 @@ Use `scripts/webhook_bridge.py` as the hook target to append incoming payloads t
 - `wake.prompt_file`: optional prompt guide file path; agent will be told to read it
 - `wake.reply_channel`: required for `agent_gate` (e.g., slack)
 - `wake.reply_to`: required for `agent_gate` (channel/user target id)
+- `wake.max_turns`: optional, number of agent turns to wait for final reply (default 8)
 
 ---
 

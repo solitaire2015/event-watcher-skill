@@ -412,15 +412,26 @@ def main() -> None:
                         if method == "agent_gate":
                             reply_channel = wake.get("reply_channel", "slack")
                             reply_to = wake.get("reply_to")
+                            max_turns = int(wake.get("max_turns", 8))
                             if not reply_to:
                                 append_dead_letter(event, "missing_reply_to")
                                 ack(r, stream, group, event_id)
                                 continue
-                            ok, reply, _ = run_agent(session_key, message, timeout)
-                            reply = (reply or "").strip()
-                            if ok and (not reply or reply.upper() == "NO_REPLY"):
-                                ok = True
-                            elif ok:
+                            ok = False
+                            reply = ""
+                            for _ in range(max_turns):
+                                ok, reply, _ = run_agent(session_key, message, timeout)
+                                reply = (reply or "").strip()
+                                if not ok:
+                                    continue
+                                if reply.upper() == "NO_REPLY":
+                                    reply = ""
+                                    ok = True
+                                    break
+                                if reply:
+                                    ok = True
+                                    break
+                            if ok and reply:
                                 ok = send_message(reply_channel, reply_to, reply, timeout)
                         else:
                             if is_rate_limited(w, state):
@@ -518,17 +529,28 @@ def main() -> None:
                     if method == "agent_gate":
                         reply_channel = wake.get("reply_channel", "slack")
                         reply_to = wake.get("reply_to")
+                        max_turns = int(wake.get("max_turns", 8))
                         if not reply_to:
                             log_event(name, "failed", event, {"reason": "missing_reply_to"})
                             metrics["failed"] += 1
                             save_state(args.state, state)
                             append_dead_letter(event, "missing_reply_to")
                             continue
-                        ok, reply, _ = run_agent(session_key, message, timeout)
-                        reply = (reply or "").strip()
-                        if ok and (not reply or reply.upper() == "NO_REPLY"):
-                            ok = True
-                        elif ok:
+                        ok = False
+                        reply = ""
+                        for _ in range(max_turns):
+                            ok, reply, _ = run_agent(session_key, message, timeout)
+                            reply = (reply or "").strip()
+                            if not ok:
+                                continue
+                            if reply.upper() == "NO_REPLY":
+                                reply = ""
+                                ok = True
+                                break
+                            if reply:
+                                ok = True
+                                break
+                        if ok and reply:
                             ok = send_message(reply_channel, reply_to, reply, timeout)
                     else:
                         if is_rate_limited(w, state):
