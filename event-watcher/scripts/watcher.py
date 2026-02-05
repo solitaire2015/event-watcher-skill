@@ -53,6 +53,99 @@ def send_to_openclaw(session_key: str, message: str, timeout: int) -> bool:
         return False
 
 
+def _extract_reply(payload: dict) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    for path in (
+        ["result", "reply"],
+        ["result", "message"],
+        ["result", "text"],
+        ["reply"],
+        ["message"],
+        ["text"],
+        ["output"],
+        ["content"],
+    ):
+        cur = payload
+        ok = True
+        for key in path:
+            if isinstance(cur, dict) and key in cur:
+                cur = cur[key]
+            else:
+                ok = False
+                break
+        if ok and isinstance(cur, str):
+            return cur
+    return ""
+
+
+def run_agent(session_key: str, message: str, timeout: int) -> tuple[bool, str, dict]:
+    cmd = [
+        "openclaw",
+        "agent",
+        "--session-id",
+        session_key,
+        "--message",
+        message,
+        "--timeout",
+        str(timeout),
+        "--json",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            check=True,
+            timeout=timeout + 10,
+            capture_output=True,
+            text=True,
+        )
+        stdout = (proc.stdout or "").strip()
+        stderr = (proc.stderr or "").strip()
+        reply = ""
+        if stdout:
+            try:
+                payload = json.loads(stdout)
+            except Exception:
+                # attempt to parse from last JSON object in output
+                payload = None
+                idx = stdout.rfind("{")
+                while idx != -1:
+                    try:
+                        payload = json.loads(stdout[idx:])
+                        break
+                    except Exception:
+                        idx = stdout.rfind("{", 0, idx)
+            if payload is not None:
+                reply = _extract_reply(payload)
+        debug = {
+            "stdout": stdout[-2000:] if stdout else "",
+            "stderr": stderr[-2000:] if stderr else "",
+        }
+        return True, (reply or ""), debug
+    except Exception as e:
+        return False, "", {"error": str(e)}
+
+
+def send_message(channel: str, target: str, message: str, timeout: int) -> bool:
+    cmd = [
+        "openclaw",
+        "message",
+        "send",
+        "--channel",
+        channel,
+        "--target",
+        target,
+        "--message",
+        message,
+        "--json",
+    ]
+    try:
+        subprocess.run(cmd, check=True, timeout=timeout + 10)
+        return True
+    except Exception:
+        return False
+
+
 def append_dead_letter(event: dict, reason: str) -> None:
     entry = {
         "event_id": event.get("event_id"),
@@ -180,6 +273,20 @@ def mark_rate_limit_sent(w, state, state_path: str) -> None:
     save_state(state_path, state)
 
 
+def resolve_message_template(wake: dict) -> str:
+    template = wake.get("message_template", "")
+    prompt_file = wake.get("prompt_file")
+
+    if template and (template.startswith("@file:") or template.startswith("@prompt:")):
+        prompt_file = template.split(":", 1)[1].strip()
+        template = ""
+
+    if prompt_file:
+        return f"Please read {prompt_file} for handling instructions. Event: {{event_id}}"
+
+    return template
+
+
 def handle_webhook_source(w, state, args):
     name = w.get("name")
     path = w.get("webhook_log_path", os.environ.get("EVENT_WATCHER_WEBHOOK_LOG", "webhook_events.jsonl"))
@@ -292,24 +399,39 @@ def main() -> None:
                             continue
 
                         wake = w.get("wake", {})
+                        method = wake.get("method", "sessions_send")
                         session_key = wake.get("session_key") or OPENCLAW_SESSION_KEY
                         if not session_key:
                             append_dead_letter(event, "missing_session_key")
                             ack(r, stream, group, event_id)
                             continue
 
-                        message = render_template(wake.get("message_template", ""), event)
+                        message = render_template(resolve_message_template(wake), event)
                         timeout = int(w.get("ack_timeout_seconds", 30))
 
-                        if is_rate_limited(w, state):
-                            log_event(name, "rate_limited", event)
-                            metrics["rate_limited"] += 1
-                            save_state(args.state, state)
-                            ack(r, stream, group, event_id)
-                            continue
+                        if method == "agent_gate":
+                            reply_channel = wake.get("reply_channel", "slack")
+                            reply_to = wake.get("reply_to")
+                            if not reply_to:
+                                append_dead_letter(event, "missing_reply_to")
+                                ack(r, stream, group, event_id)
+                                continue
+                            ok, reply, _ = run_agent(session_key, message, timeout)
+                            reply = (reply or "").strip()
+                            if ok and (not reply or reply.upper() == "NO_REPLY"):
+                                ok = True
+                            elif ok:
+                                ok = send_message(reply_channel, reply_to, reply, timeout)
+                        else:
+                            if is_rate_limited(w, state):
+                                log_event(name, "rate_limited", event)
+                                metrics["rate_limited"] += 1
+                                save_state(args.state, state)
+                                ack(r, stream, group, event_id)
+                                continue
 
-                        mark_rate_limit_sent(w, state, args.state)
-                        ok = send_to_openclaw(session_key, message, timeout)
+                            mark_rate_limit_sent(w, state, args.state)
+                            ok = send_to_openclaw(session_key, message, timeout)
 
                         if ok:
                             log_event(name, "delivered", event)
@@ -389,17 +511,34 @@ def main() -> None:
                         append_dead_letter(event, "missing_session_key")
                         continue
 
-                    message = render_template(wake.get("message_template", ""), event)
+                    message = render_template(resolve_message_template(wake), event)
                     timeout = int(w.get("ack_timeout_seconds", 30))
+                    method = wake.get("method", "sessions_send")
 
-                    if is_rate_limited(w, state):
-                        log_event(name, "rate_limited", event)
-                        metrics["rate_limited"] += 1
-                        save_state(args.state, state)
-                        continue
+                    if method == "agent_gate":
+                        reply_channel = wake.get("reply_channel", "slack")
+                        reply_to = wake.get("reply_to")
+                        if not reply_to:
+                            log_event(name, "failed", event, {"reason": "missing_reply_to"})
+                            metrics["failed"] += 1
+                            save_state(args.state, state)
+                            append_dead_letter(event, "missing_reply_to")
+                            continue
+                        ok, reply, _ = run_agent(session_key, message, timeout)
+                        reply = (reply or "").strip()
+                        if ok and (not reply or reply.upper() == "NO_REPLY"):
+                            ok = True
+                        elif ok:
+                            ok = send_message(reply_channel, reply_to, reply, timeout)
+                    else:
+                        if is_rate_limited(w, state):
+                            log_event(name, "rate_limited", event)
+                            metrics["rate_limited"] += 1
+                            save_state(args.state, state)
+                            continue
 
-                    mark_rate_limit_sent(w, state, args.state)
-                    ok = send_to_openclaw(session_key, message, timeout)
+                        mark_rate_limit_sent(w, state, args.state)
+                        ok = send_to_openclaw(session_key, message, timeout)
                     if ok:
                         log_event(name, "delivered", event)
                         metrics["delivered"] += 1
