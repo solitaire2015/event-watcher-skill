@@ -103,9 +103,11 @@ Use `scripts/webhook_bridge.py` as the hook target to append incoming payloads t
 - `rate_limit.min_interval_seconds`: minimum seconds between deliveries
 - `aggregate.window_seconds`: aggregate events for a window and send one message
 - `aggregate.message_template`: template for aggregated message (supports `{{count}}`, `{{first_event_id}}`, `{{last_event_id}}`, `{{last_payload}}`)
-- `wake.method`: `sessions_send` (implemented via `openclaw agent --session-id`)
+- `wake.method`: `sessions_send | agent_gate`
 - `wake.session_key`: target session id (from `openclaw sessions --json`)
 - `wake.message_template`: text for the agent
+- `wake.reply_channel`: required for `agent_gate` (e.g., slack)
+- `wake.reply_to`: required for `agent_gate` (channel/user target id)
 
 ---
 
@@ -176,7 +178,8 @@ aggregate:
 ## Session Routing
 - Each watcher can target a session via `wake.session_key`
 - If omitted, use env `OPENCLAW_SESSION_KEY`
-- The agent decides whether to notify the user
+- `wake.method: sessions_send` will just wake the agent (no delivery)
+- `wake.method: agent_gate` runs the agent and only sends if reply != `NO_REPLY`
 
 ---
 
