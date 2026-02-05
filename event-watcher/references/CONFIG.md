@@ -196,6 +196,13 @@ aggregate:
 - Use `--strict` to fail if webhook log path is missing
 - Graceful shutdown: watcher handles SIGTERM/SIGINT and flushes state
 
+## Agent Lock (avoid concurrent CLI crashes)
+- Uses a simple lock file to serialize `openclaw agent` / `message send`
+- Env overrides:
+  - `EVENT_WATCHER_LOCK` (default `/tmp/event_watcher.lock`)
+  - `EVENT_WATCHER_LOCK_TIMEOUT` (default `30` seconds)
+  - `EVENT_WATCHER_LOCK_BACKOFF` (default `0.5` seconds)
+
 ## pm2 Management (MVP)
 - Start: `./scripts/pm2_start.sh`
 - Stop: `./scripts/pm2_stop.sh`

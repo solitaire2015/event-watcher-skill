@@ -8,6 +8,7 @@ import signal
 import subprocess
 import time
 from typing import Any, Dict
+from contextlib import contextmanager
 
 import yaml
 import redis
@@ -22,6 +23,9 @@ DEFAULT_STATE = os.environ.get("EVENT_WATCHER_STATE", "event_watcher_state.json"
 DEAD_LETTER = os.environ.get("EVENT_WATCHER_DEAD_LETTER", "dead_letter.jsonl")
 EVENT_LOG = os.environ.get("EVENT_WATCHER_LOG", "event_watcher_events.jsonl")
 OPENCLAW_SESSION_KEY = os.environ.get("OPENCLAW_SESSION_KEY")
+LOCK_PATH = os.environ.get("EVENT_WATCHER_LOCK", "/tmp/event_watcher.lock")
+LOCK_TIMEOUT = int(os.environ.get("EVENT_WATCHER_LOCK_TIMEOUT", "30"))
+LOCK_BACKOFF = float(os.environ.get("EVENT_WATCHER_LOCK_BACKOFF", "0.5"))
 SHUTDOWN = False
 
 
@@ -30,6 +34,30 @@ def load_config(path: str) -> dict:
         raise SystemExit(f"Config not found: {path}")
     with open(path, "r") as f:
         return yaml.safe_load(f) or {}
+
+
+@contextmanager
+def agent_lock():
+    start = time.time()
+    fd = None
+    while True:
+        try:
+            fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+            os.write(fd, str(os.getpid()).encode())
+            break
+        except FileExistsError:
+            if time.time() - start > LOCK_TIMEOUT:
+                break
+            time.sleep(LOCK_BACKOFF)
+    try:
+        yield fd is not None
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+                os.unlink(LOCK_PATH)
+            except Exception:
+                pass
 
 
 def load_state(path: str) -> dict:
@@ -47,7 +75,10 @@ def save_state(path: str, state: dict) -> None:
 def send_to_openclaw(session_key: str, message: str, timeout: int) -> bool:
     cmd = ["openclaw", "agent", "--session-id", session_key, "--message", message, "--timeout", str(timeout)]
     try:
-        subprocess.run(cmd, check=True, timeout=timeout + 5)
+        with agent_lock() as acquired:
+            if not acquired:
+                time.sleep(LOCK_BACKOFF)
+            subprocess.run(cmd, check=True, timeout=timeout + 5)
         return True
     except Exception:
         return False
@@ -92,13 +123,16 @@ def run_agent(session_key: str, message: str, timeout: int) -> tuple[bool, str, 
         "--json",
     ]
     try:
-        proc = subprocess.run(
-            cmd,
-            check=True,
-            timeout=timeout + 10,
-            capture_output=True,
-            text=True,
-        )
+        with agent_lock() as acquired:
+            if not acquired:
+                time.sleep(LOCK_BACKOFF)
+            proc = subprocess.run(
+                cmd,
+                check=True,
+                timeout=timeout + 10,
+                capture_output=True,
+                text=True,
+            )
         stdout = (proc.stdout or "").strip()
         stderr = (proc.stderr or "").strip()
         reply = ""
@@ -140,7 +174,10 @@ def send_message(channel: str, target: str, message: str, timeout: int) -> bool:
         "--json",
     ]
     try:
-        subprocess.run(cmd, check=True, timeout=timeout + 10)
+        with agent_lock() as acquired:
+            if not acquired:
+                time.sleep(LOCK_BACKOFF)
+            subprocess.run(cmd, check=True, timeout=timeout + 10)
         return True
     except Exception:
         return False
