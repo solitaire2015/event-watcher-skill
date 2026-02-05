@@ -77,6 +77,24 @@ def render_template(template: str, event: dict) -> str:
     if not template:
         return f"New event: {event['event_id']}"
     out = template
-    for key in ["event_id", "source", "topic", "timestamp", "payload"]:
-        out = out.replace(f"{{{{{key}}}}}", str(event.get(key)))
-    return out
+
+    # Support nested paths like {{payload.city}}
+    def lookup(path: str):
+        cur = event
+        for part in path.split("."):
+            if isinstance(cur, dict) and part in cur:
+                cur = cur[part]
+            else:
+                return None
+        return cur
+
+    # Replace {{path}} patterns
+    import re
+    pattern = re.compile(r"\{\{\s*([^\}]+?)\s*\}\}")
+
+    def repl(match):
+        key = match.group(1).strip()
+        val = lookup(key)
+        return "" if val is None else str(val)
+
+    return pattern.sub(repl, out)
