@@ -112,8 +112,8 @@ Use `scripts/webhook_bridge.py` as the hook target to append incoming payloads t
 - `wake.session_key`: optional session key (resolved from session store)
 - `wake.message_template`: text for the agent
 - `wake.prompt_file`: optional prompt guide file path; agent will be told to read it
-- `wake.reply_channel`: delivery channel (e.g., slack)
-- `wake.reply_to`: delivery target (channel/user target id)
+- `wake.reply_channel`: delivery channel (e.g., slack) **required for sessions_send**
+- `wake.reply_to`: delivery target (channel/user target id) **required for sessions_send**
 
 ---
 

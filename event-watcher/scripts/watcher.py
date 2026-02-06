@@ -445,7 +445,12 @@ def main() -> None:
 
                         wake = w.get("wake", {})
                         method = wake.get("method", "sessions_send")
-                        session_id = resolve_session_id(wake) or wake.get("session_key") or OPENCLAW_SESSION_KEY
+                        if method == "sessions_send":
+                            if not wake.get("reply_to") or not wake.get("reply_channel"):
+                                append_dead_letter(event, "missing_reply_to")
+                                ack(r, stream, group, event_id)
+                                continue
+                        session_id = resolve_session_id(wake) or wake.get("session_key")
                         if not session_id:
                             append_dead_letter(event, "missing_session_id")
                             ack(r, stream, group, event_id)
@@ -555,7 +560,14 @@ def main() -> None:
                         continue
 
                     wake = w.get("wake", {})
-                    session_id = resolve_session_id(wake) or wake.get("session_key") or OPENCLAW_SESSION_KEY
+                    if method == "sessions_send":
+                        if not wake.get("reply_to") or not wake.get("reply_channel"):
+                            log_event(name, "failed", event, {"reason": "missing_reply_to"})
+                            metrics["failed"] += 1
+                            save_state(args.state, state)
+                            append_dead_letter(event, "missing_reply_to")
+                            continue
+                    session_id = resolve_session_id(wake) or wake.get("session_key")
                     if not session_id:
                         log_event(name, "failed", event, {"reason": "missing_session_id"})
                         metrics["failed"] += 1
