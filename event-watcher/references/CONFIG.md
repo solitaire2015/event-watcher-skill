@@ -1,4 +1,4 @@
-# Event Watcher v0 Config Spec (Redis Streams + pm2)
+# Event Watcher v0 Config Spec (Redis Streams + webhook JSONL)
 
 ## Goals
 - No events → no agent wake → no token cost
@@ -16,11 +16,6 @@ REDIS_URL=redis://:password@host:6379/0
 REDIS_HOST=...
 REDIS_PORT=...
 REDIS_PASSWORD=...
-```
-
-Optional:
-```
-OPENCLAW_SESSION_KEY=...   # default session for wake if watcher omits it
 ```
 
 ---
@@ -62,7 +57,8 @@ watchers:
       backoff_seconds: [60, 300, 900]
     wake:
       method: sessions_send
-      session_key: "<openclaw_session_key>"
+      reply_channel: slack
+      reply_to: channel:YOUR_CHANNEL_ID
       # Option A: inline template
       message_template: |
         New event: {{event_id}}
@@ -83,7 +79,8 @@ watchers:
       value: "sunny"
     wake:
       method: sessions_send
-      session_key: "<openclaw_session_key>"
+      reply_channel: slack
+      reply_to: channel:YOUR_CHANNEL_ID
       message_template: "Webhook event {{event_id}}"
 ```
 
@@ -107,11 +104,12 @@ Use `scripts/webhook_bridge.py` as the hook target to append incoming payloads t
 - `aggregate.window_seconds`: aggregate events for a window and send one message
 - `aggregate.message_template`: template for aggregated message (supports `{{count}}`, `{{first_event_id}}`, `{{last_event_id}}`, `{{last_payload}}`)
 - `wake.method`: `sessions_send | agent_gate`
-- `wake.session_key`: target session id (from `openclaw sessions --json`)
+- `wake.session_id`: optional explicit session id override
+- `wake.session_key`: optional session key (resolved from session store)
 - `wake.message_template`: text for the agent
 - `wake.prompt_file`: optional prompt guide file path; agent will be told to read it
-- `wake.reply_channel`: required for `agent_gate` (e.g., slack)
-- `wake.reply_to`: required for `agent_gate` (channel/user target id)
+- `wake.reply_channel`: required for `sessions_send` and `agent_gate` (e.g., slack)
+- `wake.reply_to`: required for `sessions_send` and `agent_gate` (channel/user target id)
 
 ---
 
@@ -144,27 +142,10 @@ Natural language can be translated by the agent into JSON.
 
 ---
 
-## Retry + Dead Letter
+## Retry
 - if delivery fails:
   - retry with backoff
-  - after max attempts, append to `dead_letter.jsonl`
-
-`dead_letter.jsonl` entry:
-```json
-{"event_id":"...","reason":"send_failed","last_attempt":"...","payload":{...}}
-```
-
-Replay CLI:
-```bash
-# list entries
-./scripts/deadletter.py list --path dead_letter.jsonl
-
-# replay all send_failed entries
-./scripts/deadletter.py replay --reason send_failed
-
-# dry run + limit
-./scripts/deadletter.py replay --dry-run --limit 10
-```
+  - after max attempts, append to dead_letter.jsonl
 
 ---
 
@@ -180,26 +161,16 @@ aggregate:
 ---
 
 ## Session Routing
-- Each watcher can target a session via `wake.session_key`
-- If omitted, use env `OPENCLAW_SESSION_KEY`
-- `wake.method: sessions_send` will just wake the agent (no delivery)
-- `wake.method: agent_gate` runs the agent and only sends if reply != `NO_REPLY`
+- Each watcher can target a session via `wake.session_id` or `wake.session_key`
+- If neither is set, watcher resolves the **latest session** for `reply_channel` + `reply_to`
+- `wake.method: sessions_send` runs agent and **delivers** to `reply_channel`/`reply_to`
+- `wake.method: agent_gate` runs agent and only sends if reply != `NO_REPLY`
 
 ---
 
 ## Logging + Metrics
 - Structured event logs: `EVENT_WATCHER_LOG` (default `event_watcher_events.jsonl`)
 - State file includes counters per watcher: received/matched/delivered/failed/filtered/deduped/rate_limited
-
-## Healthcheck + Shutdown
-- Healthcheck: `./scripts/healthcheck.py --config event_watcher.yaml`
-- Use `--strict` to fail if webhook log path is missing
-- Graceful shutdown: watcher handles SIGTERM/SIGINT and flushes state
-
-## pm2 Management (MVP)
-- Start: `./scripts/pm2_start.sh`
-- Stop: `./scripts/pm2_stop.sh`
-- Logs: `pm2 logs event-watcher`
 
 ## Daemon Templates (systemd / launchd)
 Templates live in `daemon/` and are **configurable** via env file + path edits:
