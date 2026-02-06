@@ -35,7 +35,9 @@ Lightweight event watcher that listens to Redis Streams (and webhook JSONL) and 
 
 **Prompt writing**
 - When using `sessions_send`, **do not write “post to #channel”** inside the prompt. Delivery target is already set by `reply_channel`/`reply_to`.
-- If the instruction is long/complex, use `prompt_file` and keep `message_template` short.
+- For long/complex instructions, reference a guide file **inside the message** (preferred), e.g.:
+  - `Guide: /path/to/guide.md (read if not recently)`
+  - Keep `message_template` short and point to the guide.
 
 **Runtime**
 - Run the watcher as a background task (e.g., `nohup`/`tmux`). No pm2/systemd required.
