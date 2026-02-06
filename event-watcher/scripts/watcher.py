@@ -34,9 +34,46 @@ def load_config(path: str) -> dict:
 
 
 
+def _candidate_session_store_paths() -> list[str]:
+    override = os.environ.get("OPENCLAW_SESSION_STORE")
+    if override:
+        return [override]
+
+    home = os.path.expanduser("~")
+    candidates = [
+        os.path.join(home, ".openclaw", "sessions", "sessions.json"),
+    ]
+
+    # dynamic agent session stores (e.g., ~/.openclaw/agents/*/sessions/sessions.json)
+    agents_dir = os.path.join(home, ".openclaw", "agents")
+    if os.path.isdir(agents_dir):
+        try:
+            for agent in os.listdir(agents_dir):
+                candidate = os.path.join(agents_dir, agent, "sessions", "sessions.json")
+                candidates.append(candidate)
+        except Exception:
+            pass
+
+    return candidates
+
+
+def _select_session_store_path() -> str | None:
+    paths = _candidate_session_store_paths()
+    existing = [p for p in paths if os.path.exists(p)]
+    if not existing:
+        return None
+
+    # prefer most recently updated file
+    try:
+        existing.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    except Exception:
+        pass
+    return existing[0]
+
+
 def load_session_store() -> dict:
-    store_path = os.environ.get("OPENCLAW_SESSION_STORE", os.path.expanduser("~/.openclaw/sessions/sessions.json"))
-    if not os.path.exists(store_path):
+    store_path = _select_session_store_path()
+    if not store_path:
         return {}
     try:
         with open(store_path, "r") as f:
