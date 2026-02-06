@@ -216,6 +216,15 @@ def init_metrics(state: dict, name: str) -> dict:
     return metrics[name]
 
 
+def message_preview(message: str, limit: int = 500) -> dict:
+    if message is None:
+        return {"message_preview": "", "message_len": 0, "message_truncated": False}
+    msg = str(message)
+    truncated = len(msg) > limit
+    preview = msg[:limit] + ("…" if truncated else "")
+    return {"message_preview": preview, "message_len": len(msg), "message_truncated": truncated}
+
+
 def log_event(watcher: str, stage: str, event: dict, extra: dict | None = None) -> None:
     entry = {
         "ts": utc_now(),
@@ -458,6 +467,14 @@ def main() -> None:
 
                         message = render_template(resolve_message_template(wake), event)
                         timeout = int(w.get("ack_timeout_seconds", 30))
+                        log_event(name, "wake", event, {
+                            "method": method,
+                            "session_id": session_id,
+                            "session_key": wake.get("session_key"),
+                            "reply_channel": wake.get("reply_channel"),
+                            "reply_to": wake.get("reply_to"),
+                            **message_preview(message),
+                        })
 
                         if method == "agent_gate":
                             reply_channel = wake.get("reply_channel", "slack")
@@ -491,7 +508,11 @@ def main() -> None:
                             )
 
                         if ok:
-                            log_event(name, "delivered", event)
+                            log_event(name, "delivered", event, {
+                                "session_id": session_id,
+                                "reply_channel": wake.get("reply_channel"),
+                                "reply_to": wake.get("reply_to"),
+                            })
                             metrics["delivered"] += 1
                             save_state(args.state, state)
                             ack(r, stream, group, event_id)
@@ -504,7 +525,12 @@ def main() -> None:
                             max_retry = int(retry.get("max", 3))
                             backoff = retry.get("backoff_seconds", [60, 300, 900])
                             if attempts >= max_retry:
-                                log_event(name, "failed", event, {"reason": "send_failed"})
+                                log_event(name, "failed", event, {
+                                    "reason": "send_failed",
+                                    "session_id": session_id,
+                                    "reply_channel": wake.get("reply_channel"),
+                                    "reply_to": wake.get("reply_to"),
+                                })
                                 metrics["failed"] += 1
                                 save_state(args.state, state)
                                 append_dead_letter(event, "send_failed")
@@ -578,6 +604,14 @@ def main() -> None:
                     message = render_template(resolve_message_template(wake), event)
                     timeout = int(w.get("ack_timeout_seconds", 30))
                     method = wake.get("method", "sessions_send")
+                    log_event(name, "wake", event, {
+                        "method": method,
+                        "session_id": session_id,
+                        "session_key": wake.get("session_key"),
+                        "reply_channel": wake.get("reply_channel"),
+                        "reply_to": wake.get("reply_to"),
+                        **message_preview(message),
+                    })
 
                     if method == "agent_gate":
                         reply_channel = wake.get("reply_channel", "slack")
@@ -611,7 +645,11 @@ def main() -> None:
                             reply_to=wake.get("reply_to"),
                         )
                     if ok:
-                        log_event(name, "delivered", event)
+                        log_event(name, "delivered", event, {
+                            "session_id": session_id,
+                            "reply_channel": wake.get("reply_channel"),
+                            "reply_to": wake.get("reply_to"),
+                        })
                         metrics["delivered"] += 1
                         save_state(args.state, state)
                     else:
@@ -621,7 +659,12 @@ def main() -> None:
                         max_retry = int(retry.get("max", 3))
                         backoff = retry.get("backoff_seconds", [60, 300, 900])
                         if attempts >= max_retry:
-                            log_event(name, "failed", event, {"reason": "send_failed"})
+                            log_event(name, "failed", event, {
+                                "reason": "send_failed",
+                                "session_id": session_id,
+                                "reply_channel": wake.get("reply_channel"),
+                                "reply_to": wake.get("reply_to"),
+                            })
                             metrics["failed"] += 1
                             save_state(args.state, state)
                             append_dead_letter(event, "send_failed")
