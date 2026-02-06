@@ -32,6 +32,45 @@ def load_config(path: str) -> dict:
         return yaml.safe_load(f) or {}
 
 
+
+
+def load_session_store() -> dict:
+    store_path = os.environ.get("OPENCLAW_SESSION_STORE", os.path.expanduser("~/.openclaw/sessions/sessions.json"))
+    if not os.path.exists(store_path):
+        return {}
+    try:
+        with open(store_path, "r") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+
+def resolve_session_id(wake: dict) -> str | None:
+    # explicit override
+    if wake.get("session_id"):
+        return wake.get("session_id")
+
+    store = load_session_store()
+
+    # session_key lookup
+    key = wake.get("session_key")
+    if key and key in store:
+        return store[key].get("sessionId")
+
+    # latest session for channel/target
+    reply_channel = wake.get("reply_channel")
+    reply_to = wake.get("reply_to")
+    if reply_channel and reply_to:
+        best = None
+        for entry in store.values():
+            if entry.get("lastChannel") == reply_channel and entry.get("lastTo") == reply_to:
+                if best is None or entry.get("updatedAt", 0) > best.get("updatedAt", 0):
+                    best = entry
+        if best:
+            return best.get("sessionId")
+
+    return None
+
 def load_state(path: str) -> dict:
     if not os.path.exists(path):
         return {"cursors": {}, "attempts": {}}
@@ -44,8 +83,14 @@ def save_state(path: str, state: dict) -> None:
         json.dump(state, f, indent=2)
 
 
-def send_to_openclaw(session_key: str, message: str, timeout: int) -> bool:
-    cmd = ["openclaw", "agent", "--session-id", session_key, "--message", message, "--timeout", str(timeout)]
+def send_to_openclaw(session_id: str, message: str, timeout: int, deliver: bool = False, reply_channel: str | None = None, reply_to: str | None = None) -> bool:
+    cmd = ["openclaw", "agent", "--session-id", session_id, "--message", message, "--timeout", str(timeout)]
+    if deliver:
+        cmd.append("--deliver")
+        if reply_channel:
+            cmd += ["--reply-channel", reply_channel]
+        if reply_to:
+            cmd += ["--reply-to", reply_to]
     try:
         subprocess.run(cmd, check=True, timeout=timeout + 5)
         return True
@@ -79,12 +124,12 @@ def _extract_reply(payload: dict) -> str:
     return ""
 
 
-def run_agent(session_key: str, message: str, timeout: int) -> tuple[bool, str, dict]:
+def run_agent(session_id: str, message: str, timeout: int) -> tuple[bool, str, dict]:
     cmd = [
         "openclaw",
         "agent",
         "--session-id",
-        session_key,
+        session_id,
         "--message",
         message,
         "--timeout",
@@ -400,9 +445,9 @@ def main() -> None:
 
                         wake = w.get("wake", {})
                         method = wake.get("method", "sessions_send")
-                        session_key = wake.get("session_key") or OPENCLAW_SESSION_KEY
-                        if not session_key:
-                            append_dead_letter(event, "missing_session_key")
+                        session_id = resolve_session_id(wake) or wake.get("session_key") or OPENCLAW_SESSION_KEY
+                        if not session_id:
+                            append_dead_letter(event, "missing_session_id")
                             ack(r, stream, group, event_id)
                             continue
 
@@ -416,7 +461,7 @@ def main() -> None:
                                 append_dead_letter(event, "missing_reply_to")
                                 ack(r, stream, group, event_id)
                                 continue
-                            ok, reply, _ = run_agent(session_key, message, timeout)
+                            ok, reply, _ = run_agent(session_id, message, timeout)
                             reply = (reply or "").strip()
                             if ok and (not reply or reply.upper() == "NO_REPLY"):
                                 ok = True
@@ -431,7 +476,14 @@ def main() -> None:
                                 continue
 
                             mark_rate_limit_sent(w, state, args.state)
-                            ok = send_to_openclaw(session_key, message, timeout)
+                            ok = send_to_openclaw(
+                                session_id,
+                                message,
+                                timeout,
+                                deliver=True,
+                                reply_channel=wake.get("reply_channel"),
+                                reply_to=wake.get("reply_to"),
+                            )
 
                         if ok:
                             log_event(name, "delivered", event)
@@ -503,12 +555,12 @@ def main() -> None:
                         continue
 
                     wake = w.get("wake", {})
-                    session_key = wake.get("session_key") or OPENCLAW_SESSION_KEY
-                    if not session_key:
-                        log_event(name, "failed", event, {"reason": "missing_session_key"})
+                    session_id = resolve_session_id(wake) or wake.get("session_key") or OPENCLAW_SESSION_KEY
+                    if not session_id:
+                        log_event(name, "failed", event, {"reason": "missing_session_id"})
                         metrics["failed"] += 1
                         save_state(args.state, state)
-                        append_dead_letter(event, "missing_session_key")
+                        append_dead_letter(event, "missing_session_id")
                         continue
 
                     message = render_template(resolve_message_template(wake), event)
@@ -524,7 +576,7 @@ def main() -> None:
                             save_state(args.state, state)
                             append_dead_letter(event, "missing_reply_to")
                             continue
-                        ok, reply, _ = run_agent(session_key, message, timeout)
+                        ok, reply, _ = run_agent(session_id, message, timeout)
                         reply = (reply or "").strip()
                         if ok and (not reply or reply.upper() == "NO_REPLY"):
                             ok = True
@@ -538,7 +590,14 @@ def main() -> None:
                             continue
 
                         mark_rate_limit_sent(w, state, args.state)
-                        ok = send_to_openclaw(session_key, message, timeout)
+                        ok = send_to_openclaw(
+                            session_id,
+                            message,
+                            timeout,
+                            deliver=True,
+                            reply_channel=wake.get("reply_channel"),
+                            reply_to=wake.get("reply_to"),
+                        )
                     if ok:
                         log_event(name, "delivered", event)
                         metrics["delivered"] += 1
