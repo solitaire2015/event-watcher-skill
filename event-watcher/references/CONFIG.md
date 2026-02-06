@@ -172,32 +172,16 @@ aggregate:
 - Structured event logs: `EVENT_WATCHER_LOG` (default `event_watcher_events.jsonl`)
 - State file includes counters per watcher: received/matched/delivered/failed/filtered/deduped/rate_limited
 
-## Daemon Templates (systemd / launchd)
-Templates live in `daemon/` and are **configurable** via env file + path edits:
-- `daemon/systemd/event-watcher.service`
-- `daemon/launchd/com.openclaw.event-watcher.plist`
+## Running in Background (recommended)
+Use a lightweight background runner instead of system daemons:
 
-**systemd (Linux):**
+**macOS / Linux**
 ```bash
-# create your env file
-sudo mkdir -p /etc/event-watcher
-sudo nano /etc/event-watcher/env
-
-sudo cp daemon/systemd/event-watcher.service /etc/systemd/system/event-watcher.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now event-watcher
+nohup python3 {baseDir}/scripts/watcher.py --config {baseDir}/config/event_watcher.yaml \
+  > {baseDir}/logs/watcher.log 2>&1 &
 ```
-Edit the env file and the service file to adjust paths/user.
 
-**launchd (macOS):**
-```bash
-# create your env file
-nano ~/event-watcher.env
-
-cp daemon/launchd/com.openclaw.event-watcher.plist ~/Library/LaunchAgents/
-launchctl load -w ~/Library/LaunchAgents/com.openclaw.event-watcher.plist
-```
-Update paths inside the plist/env file for your machine.
+Or run inside `tmux`/`screen`.
 
 ---
 
