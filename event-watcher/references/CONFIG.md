@@ -176,20 +176,24 @@ aggregate:
 Templates live in `daemon/` and are **configurable** via env file + path edits:
 - `daemon/systemd/event-watcher.service`
 - `daemon/launchd/com.openclaw.event-watcher.plist`
-- `daemon/env.example`
 
 **systemd (Linux):**
 ```bash
-sudo cp daemon/env.example /etc/event-watcher.env
+# create your env file
+sudo mkdir -p /etc/event-watcher
+sudo nano /etc/event-watcher/env
+
 sudo cp daemon/systemd/event-watcher.service /etc/systemd/system/event-watcher.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now event-watcher
 ```
-Edit `/etc/event-watcher.env` and the service file to adjust paths/user.
+Edit the env file and the service file to adjust paths/user.
 
 **launchd (macOS):**
 ```bash
-cp daemon/env.example ~/event-watcher.env
+# create your env file
+nano ~/event-watcher.env
+
 cp daemon/launchd/com.openclaw.event-watcher.plist ~/Library/LaunchAgents/
 launchctl load -w ~/Library/LaunchAgents/com.openclaw.event-watcher.plist
 ```

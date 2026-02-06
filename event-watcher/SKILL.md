@@ -1,6 +1,7 @@
 ---
 name: event-watcher
 description: Event watcher skill for OpenClaw. Use when you need a daemon that subscribes to event sources (Redis Streams + webhook JSONL) and wakes an agent only when matching events arrive. Covers filtering, dedupe, retry, and session routing via sessions_send/agent_gate.
+metadata: {"openclaw":{"requires":{"python":["redis","pyyaml"]}}}
 ---
 
 # Event Watcher
@@ -28,13 +29,11 @@ Lightweight event watcher daemon that listens to Redis Streams (and webhook JSON
 ## Scripts
 - `scripts/watcher.py` — multi-source watcher (redis_stream, webhook)
 - `scripts/webhook_bridge.py` — append webhook payloads to JSONL
-- `scripts/manage.py` — add/update/remove/list watcher configs
 - `scripts/requirements.txt` — Python deps (redis, pyyaml)
 
-## Daemon Templates
+## Daemon Templates (optional)
 - `daemon/systemd/event-watcher.service`
 - `daemon/launchd/com.openclaw.event-watcher.plist`
-- `daemon/env.example`
 
 ## References
 - See `references/CONFIG.md` for full configuration spec, examples, and routing rules.
