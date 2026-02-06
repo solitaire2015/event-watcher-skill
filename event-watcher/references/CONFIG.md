@@ -62,7 +62,8 @@ watchers:
       backoff_seconds: [60, 300, 900]
     wake:
       method: sessions_send
-      session_key: "<openclaw_session_key>"
+      reply_channel: slack
+      reply_to: channel:C0ACE3NL61M
       # Option A: inline template
       message_template: |
         New event: {{event_id}}
@@ -107,11 +108,12 @@ Use `scripts/webhook_bridge.py` as the hook target to append incoming payloads t
 - `aggregate.window_seconds`: aggregate events for a window and send one message
 - `aggregate.message_template`: template for aggregated message (supports `{{count}}`, `{{first_event_id}}`, `{{last_event_id}}`, `{{last_payload}}`)
 - `wake.method`: `sessions_send | agent_gate`
-- `wake.session_key`: target session id (from `openclaw sessions --json`)
+- `wake.session_id`: optional explicit session id override
+- `wake.session_key`: optional session key (resolved from session store)
 - `wake.message_template`: text for the agent
 - `wake.prompt_file`: optional prompt guide file path; agent will be told to read it
-- `wake.reply_channel`: required for `agent_gate` (e.g., slack)
-- `wake.reply_to`: required for `agent_gate` (channel/user target id)
+- `wake.reply_channel`: delivery channel (e.g., slack) **required for sessions_send**
+- `wake.reply_to`: delivery target (channel/user target id) **required for sessions_send**
 
 ---
 
@@ -182,8 +184,8 @@ aggregate:
 ## Session Routing
 - Each watcher can target a session via `wake.session_key`
 - If omitted, use env `OPENCLAW_SESSION_KEY`
-- `wake.method: sessions_send` will just wake the agent (no delivery)
-- `wake.method: agent_gate` runs the agent and only sends if reply != `NO_REPLY`
+- `wake.method: sessions_send` runs agent and **delivers** to reply_channel/reply_to
+- `wake.method: agent_gate` runs agent and only sends if reply != `NO_REPLY`
 
 ---
 
