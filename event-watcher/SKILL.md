@@ -1,40 +1,34 @@
 ---
 name: event-watcher
-description: Event watcher skill for OpenClaw. Use when you need to design, configure, or implement a daemon that subscribes to event sources (starting with Redis Streams) and wakes an agent via sessions_send only when matching events arrive. Covers pm2-based daemon management, event filtering, dedupe, retry/dead-letter handling, and session routing.
+description: Event watcher skill for OpenClaw. Use when you need a daemon that subscribes to event sources (Redis Streams + webhook JSONL) and wakes an agent only when matching events arrive. Covers filtering, dedupe, retry, and session routing via sessions_send/agent_gate.
 ---
 
 # Event Watcher
 
 ## Overview
-Design and operate a lightweight event watcher daemon (pm2-managed) that listens to Redis Streams and wakes an OpenClaw session only on matching events. No events → no agent wake → no token spend.
+Lightweight event watcher daemon that listens to Redis Streams (and webhook JSONL) and wakes an OpenClaw session only on matching events. No events → no agent wake → no token spend.
 
 ## Core Capabilities
 1. **Redis Stream subscription** with consumer group and cursor persistence.
-2. **Event normalization** to a unified schema.
+2. **Webhook JSONL ingestion** via `webhook_bridge.py`.
 3. **Filtering** via JSON rules (supports AND/OR + regex).
 4. **Deduplication** with TTL (configurable).
-5. **Retry + dead-letter** on failed delivery.
-6. **Session routing** via `sessions_send` (configurable per watcher).
+5. **Retry** on failed delivery.
+6. **Session routing** via `sessions_send` or `agent_gate`.
 7. **Structured logging + counters** for received/matched/delivered/failed.
-8. **Daemon management** using pm2 (start/stop/logs).
 
 ## Workflow (MVP)
 1. Read watcher config (YAML) from `references/CONFIG.md`.
-2. Start daemon with pm2 (scripts below).
+2. Run the watcher (see examples).
 3. On event:
    - Normalize → filter → dedupe
-   - Send to target session with `sessions_send`
+   - Deliver to target session (default: `sessions_send`)
    - Record ack or retry
-   - Write dead_letter.jsonl on terminal failure
 
 ## Scripts
 - `scripts/watcher.py` — multi-source watcher (redis_stream, webhook)
 - `scripts/webhook_bridge.py` — append webhook payloads to JSONL
-- `scripts/deadletter.py` — list/replay dead-letter events
-- `scripts/healthcheck.py` — healthcheck (redis/stream + webhook log)
 - `scripts/manage.py` — add/update/remove/list watcher configs
-- `scripts/pm2_start.sh` — start daemon under pm2
-- `scripts/pm2_stop.sh` — stop daemon
 - `scripts/requirements.txt` — Python deps (redis, pyyaml)
 
 ## Daemon Templates

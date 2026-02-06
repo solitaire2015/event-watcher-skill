@@ -9,6 +9,7 @@ watchers:
       value: "sunny"
     wake:
       method: sessions_send
-      session_key: "agent:main:slack:channel:YOURCHANNEL"
+      reply_channel: slack
+      reply_to: channel:YOUR_CHANNEL_ID
       message_template: |
         Webhook event: id={{event_id}} type={{payload.type}} city={{payload.city}}
