@@ -106,8 +106,9 @@ Use `scripts/webhook_bridge.py` as the hook target to append incoming payloads t
 - `wake.method`: `sessions_send | agent_gate`
 - `wake.session_id`: optional explicit session id override
 - `wake.session_key`: optional session key (resolved from session store)
+- `wake.disable_session_store_lookup`: if true, skip reading local session store (privacy)
+- `wake.add_source_preamble`: if true (default), prepend a safety header to the message
 - `wake.message_template`: text for the agent
-- `wake.prompt_file`: optional prompt guide file path; agent will be told to read it
 - `wake.reply_channel`: required for `sessions_send` and `agent_gate` (e.g., slack)
 - `wake.reply_to`: required for `sessions_send` and `agent_gate` (channel/user target id)
 
@@ -163,6 +164,7 @@ aggregate:
 ## Session Routing
 - Each watcher can target a session via `wake.session_id` or `wake.session_key`
 - If neither is set, watcher resolves the **latest session** for `reply_channel` + `reply_to`
+- Set `wake.disable_session_store_lookup: true` to skip local session file access
 - `wake.method: sessions_send` runs agent and **delivers** to `reply_channel`/`reply_to`
 - `wake.method: agent_gate` runs agent and only sends if reply != `NO_REPLY`
 
@@ -171,6 +173,10 @@ aggregate:
 ## Logging + Metrics
 - Structured event logs: `EVENT_WATCHER_LOG` (default `event_watcher_events.jsonl`)
 - State file includes counters per watcher: received/matched/delivered/failed/filtered/deduped/rate_limited
+
+## Prompt Safety (recommended)
+- By default, watcher prepends a safety header describing the event source and warning against prompt injection.
+- Disable via `wake.add_source_preamble: false` if you have a controlled, trusted payload.
 
 ## Running in Background (recommended)
 Use a lightweight background runner instead of system daemons:
