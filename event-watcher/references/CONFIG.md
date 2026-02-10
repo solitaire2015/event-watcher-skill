@@ -1,4 +1,4 @@
-# Event Watcher v0 Config Spec (Redis Streams + pm2)
+# Event Watcher v0 Config Spec (Redis Streams + webhook JSONL)
 
 ## Goals
 - No events → no agent wake → no token cost
@@ -16,11 +16,6 @@ REDIS_URL=redis://:password@host:6379/0
 REDIS_HOST=...
 REDIS_PORT=...
 REDIS_PASSWORD=...
-```
-
-Optional:
-```
-OPENCLAW_SESSION_KEY=...   # default session for wake if watcher omits it
 ```
 
 ---
@@ -63,7 +58,7 @@ watchers:
     wake:
       method: sessions_send
       reply_channel: slack
-      reply_to: channel:C0ACE3NL61M
+      reply_to: channel:YOUR_CHANNEL_ID
       # Option A: inline template
       message_template: |
         New event: {{event_id}}
@@ -84,7 +79,8 @@ watchers:
       value: "sunny"
     wake:
       method: sessions_send
-      session_key: "<openclaw_session_key>"
+      reply_channel: slack
+      reply_to: channel:YOUR_CHANNEL_ID
       message_template: "Webhook event {{event_id}}"
 ```
 
@@ -110,10 +106,11 @@ Use `scripts/webhook_bridge.py` as the hook target to append incoming payloads t
 - `wake.method`: `sessions_send | agent_gate`
 - `wake.session_id`: optional explicit session id override
 - `wake.session_key`: optional session key (resolved from session store)
+- `wake.disable_session_store_lookup`: if true, skip reading local session store (privacy)
+- `wake.add_source_preamble`: if true (default), prepend a safety header to the message
 - `wake.message_template`: text for the agent
-- `wake.prompt_file`: optional prompt guide file path; agent will be told to read it
-- `wake.reply_channel`: delivery channel (e.g., slack) **required for sessions_send**
-- `wake.reply_to`: delivery target (channel/user target id) **required for sessions_send**
+- `wake.reply_channel`: required for `sessions_send` and `agent_gate` (e.g., slack)
+- `wake.reply_to`: required for `sessions_send` and `agent_gate` (channel/user target id)
 
 ---
 
@@ -146,27 +143,10 @@ Natural language can be translated by the agent into JSON.
 
 ---
 
-## Retry + Dead Letter
+## Retry
 - if delivery fails:
   - retry with backoff
-  - after max attempts, append to `dead_letter.jsonl`
-
-`dead_letter.jsonl` entry:
-```json
-{"event_id":"...","reason":"send_failed","last_attempt":"...","payload":{...}}
-```
-
-Replay CLI:
-```bash
-# list entries
-./scripts/deadletter.py list --path dead_letter.jsonl
-
-# replay all send_failed entries
-./scripts/deadletter.py replay --reason send_failed
-
-# dry run + limit
-./scripts/deadletter.py replay --dry-run --limit 10
-```
+  - after max attempts, append to dead_letter.jsonl
 
 ---
 
@@ -182,9 +162,10 @@ aggregate:
 ---
 
 ## Session Routing
-- Each watcher can target a session via `wake.session_key`
-- If omitted, use env `OPENCLAW_SESSION_KEY`
-- `wake.method: sessions_send` runs agent and **delivers** to reply_channel/reply_to
+- Each watcher can target a session via `wake.session_id` or `wake.session_key`
+- If neither is set, watcher resolves the **latest session** for `reply_channel` + `reply_to`
+- Set `wake.disable_session_store_lookup: true` to skip local session file access
+- `wake.method: sessions_send` runs agent and **delivers** to `reply_channel`/`reply_to`
 - `wake.method: agent_gate` runs agent and only sends if reply != `NO_REPLY`
 
 ---
@@ -193,38 +174,20 @@ aggregate:
 - Structured event logs: `EVENT_WATCHER_LOG` (default `event_watcher_events.jsonl`)
 - State file includes counters per watcher: received/matched/delivered/failed/filtered/deduped/rate_limited
 
-## Healthcheck + Shutdown
-- Healthcheck: `./scripts/healthcheck.py --config event_watcher.yaml`
-- Use `--strict` to fail if webhook log path is missing
-- Graceful shutdown: watcher handles SIGTERM/SIGINT and flushes state
+## Prompt Safety (recommended)
+- By default, watcher prepends a safety header describing the event source and warning against prompt injection.
+- Disable via `wake.add_source_preamble: false` if you have a controlled, trusted payload.
 
-## pm2 Management (MVP)
-- Start: `./scripts/pm2_start.sh`
-- Stop: `./scripts/pm2_stop.sh`
-- Logs: `pm2 logs event-watcher`
+## Running in Background (recommended)
+Use a lightweight background runner instead of system daemons:
 
-## Daemon Templates (systemd / launchd)
-Templates live in `daemon/` and are **configurable** via env file + path edits:
-- `daemon/systemd/event-watcher.service`
-- `daemon/launchd/com.openclaw.event-watcher.plist`
-- `daemon/env.example`
-
-**systemd (Linux):**
+**macOS / Linux**
 ```bash
-sudo cp daemon/env.example /etc/event-watcher.env
-sudo cp daemon/systemd/event-watcher.service /etc/systemd/system/event-watcher.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now event-watcher
+nohup python3 {baseDir}/scripts/watcher.py --config {baseDir}/config/event_watcher.yaml \
+  > {baseDir}/logs/watcher.log 2>&1 &
 ```
-Edit `/etc/event-watcher.env` and the service file to adjust paths/user.
 
-**launchd (macOS):**
-```bash
-cp daemon/env.example ~/event-watcher.env
-cp daemon/launchd/com.openclaw.event-watcher.plist ~/Library/LaunchAgents/
-launchctl load -w ~/Library/LaunchAgents/com.openclaw.event-watcher.plist
-```
-Update paths inside the plist/env file for your machine.
+Or run inside `tmux`/`screen`.
 
 ---
 
